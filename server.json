@@ -1,0 +1,23 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
+  "name": "nl.getapi/nlgetapi-mcp",
+  "version": "1.0.0",
+  "description": "Officiële GetAPI.nl MCP server voor lookup APIs (postcode, RDW, KVK, DNS, BTW, SBI, IP, energielabel, en meer).",
+  "title": "GetAPI.nl MCP Server",
+  "websiteUrl": "https://getapi.nl",
+  "remotes": [
+    {
+      "url": "https://api.getapi.nl/api/mcp",
+      "transport": {
+        "type": "streamable-http"
+      },
+      "headers": {
+        "X-Api-Key": "${GETAPI_API_KEY}"
+      }
+    }
+  ],
+  "repository": {
+    "url": "https://github.com/GetApiNL/getapi-mcp",
+    "source": "github"
+  }
+}
