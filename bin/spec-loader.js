@@ -43,30 +43,51 @@ export class SpecLoader {
                 validateStatus: (status) => status >= 200 && status < 600
             });
             const duration = Date.now() - startTime;
-            if (response.data.length > this.maxSpecSize) {
-                console.error(`Spec te groot: ${Math.round(response.data.length / 1024)} KB`);
+            // Controleer Content-Type header
+            const contentType = response.headers['content-type']?.toString() || '';
+            if (!contentType.includes('application/json')) {
+                console.warn(`Content-Type is niet JSON: ${contentType}`);
+                console.error('Geen JSON response van spec server.');
                 return null;
             }
-            let spec;
-            try {
-                spec = JSON.parse(response.data);
+            if (typeof response.data === 'string') {
+                if (response.data.length > this.maxSpecSize) {
+                    console.error(`Spec te groot: ${Math.round(response.data.length / 1024)} KB`);
+                    return null;
+                }
+                let spec;
+                try {
+                    spec = JSON.parse(response.data);
+                }
+                catch (e) {
+                    console.error(`Fout bij parsen van spec: ${response.data.substring(0, 200)}...`);
+                    return null;
+                }
+                const hash = this.computeHash(spec);
+                if (!this.validateSpec(spec)) {
+                    console.error('Spec is ongeldig OpenAPI');
+                    return null;
+                }
+                const cleanSpec = this.excludeX402(spec);
+                const newHash = this.computeHash(cleanSpec);
+                return {
+                    spec: cleanSpec,
+                    hash: newHash,
+                    valid: true
+                };
             }
-            catch (e) {
-                console.error('Fout bij parsen van spec: ' + (e && e.message ? e.message : String(e)));
+            else if (typeof response.data === 'object') {
+                // Axios kan soms direct een object retourneren
+                if (this.validateSpec(response.data)) {
+                    const cleanSpec = this.excludeX402(response.data);
+                    const newHash = this.computeHash(cleanSpec);
+                    return { spec: cleanSpec, hash: newHash, valid: true };
+                }
+            }
+            else {
+                console.error('Onverwacht response type: ' + typeof response.data);
                 return null;
             }
-            const hash = this.computeHash(spec);
-            if (!this.validateSpec(spec)) {
-                console.error('Spec is ongeldig OpenAPI');
-                return null;
-            }
-            const cleanSpec = this.excludeX402(spec);
-            const newHash = this.computeHash(cleanSpec);
-            return {
-                spec: cleanSpec,
-                hash: newHash,
-                valid: true
-            };
         }
         catch (e) {
             if (e.code === 'ECONNREFUSED') {
@@ -110,196 +131,85 @@ export class SpecLoader {
                     sorted.info[key] = this.sortObject(val);
             });
         }
-        const paths = Object.keys(sorted.paths || {}).sort();
+        const paths = sorted.paths || {};
         const sortedPaths = {};
-        paths.forEach((path) => {
-            sortedPaths[path] = sorted.paths[path];
+        Object.keys(paths).sort().forEach(path => {
+            sortedPaths[path] = paths[path];
         });
-        sorted.paths = sortedPaths;
-        Object.keys(sortedPaths).forEach((path) => {
-            if (Array.isArray(sortedPaths[path])) {
-                sortedPaths[path] = sortedPaths[path].sort((a, b) => {
-                    const amethod = (a && a.httpMethod) || '';
-                    const bmethod = (b && b.httpMethod) || '';
-                    return amethod.localeCompare(bmethod);
-                });
-            }
-        });
-        sorted.paths = sortedPaths;
-        if (sorted.tags) {
-            sorted.tags = sorted.tags.sort((a, b) => {
-                const aname = (a && a.name) || '';
-                const bname = (b && b.name) || '';
-                return aname.localeCompare(bname);
-            });
-        }
-        return sorted;
+        return {
+            ...sorted,
+            paths: sortedPaths
+        };
     }
     sortObject(obj) {
         const sorted = {};
-        Object.keys(obj).sort().forEach((key) => {
-            const val = obj[key];
-            if (typeof val === 'string')
-                sorted[key] = val;
-            else if (Array.isArray(val))
-                sorted[key] = [...val].sort();
-            else if (typeof val === 'object' && val !== null)
-                sorted[key] = this.sortObject(val);
-        });
+        if (typeof obj === 'object' && obj !== null) {
+            Object.keys(obj).sort().forEach(key => {
+                sorted[key] = obj[key];
+            });
+        }
         return sorted;
     }
     validateSpec(spec) {
         try {
-            SpecValidationSchema.parse(spec);
-            return true;
+            const result = SpecValidationSchema.safeParse(spec);
+            return result.success;
         }
         catch (e) {
-            if (e instanceof z.ZodError) {
-                const messages = e.errors.map((err) => `${err.path.join('.')}: ${err.message}`).join('; ');
-                console.error('Spec-validatie mislukt: ' + messages);
-            }
-            else {
-                console.error('Spec-validatie mislukt: ' + (e && e.message ? e.message : String(e)));
-            }
             return false;
         }
     }
     excludeX402(spec) {
-        const filteredPaths = {};
-        Object.keys(spec.paths || {}).forEach((path) => {
-            const pathItem = spec.paths[path];
-            if (typeof pathItem === 'string') {
-                filteredPaths[path] = pathItem;
-            }
-            else {
-                const filteredPathItem = {};
-                if (pathItem.get)
-                    filteredPathItem.get = pathItem.get;
-                if (pathItem.post)
-                    filteredPathItem.post = pathItem.post;
-                if (pathItem.put)
-                    filteredPathItem.put = pathItem.put;
-                if (pathItem.delete)
-                    filteredPathItem.delete = pathItem.delete;
-                if (pathItem.patch)
-                    filteredPathItem.patch = pathItem.patch;
-                if (pathItem.options)
-                    filteredPathItem.options = pathItem.options;
-                if (pathItem.head)
-                    filteredPathItem.head = pathItem.head;
-                if (pathItem.trace)
-                    filteredPathItem.trace = pathItem.trace;
-                if (Object.keys(filteredPathItem).length > 0) {
-                    const pathItemOps = Object.values(filteredPathItem).filter(op => op && typeof op === 'object');
-                    const has402 = pathItemOps.some((op) => {
-                        const tags = op.tags || [];
-                        return tags.some((tag) => {
-                            if (typeof tag === 'object') {
-                                return tag.name && tag.name.includes('x402');
-                            }
-                            return false;
-                        });
+        const excludeSet = new Set([...fixedConfig.x402ExcludedOperations]);
+        const cleanSpec = { ...spec };
+        if (cleanSpec.paths) {
+            Object.keys(cleanSpec.paths).forEach(path => {
+                const pathItem = cleanSpec.paths[path];
+                if (typeof pathItem === 'object') {
+                    const methods = ['get', 'post', 'put', 'delete', 'patch', 'options', 'head', 'trace'];
+                    methods.forEach(method => {
+                        const op = pathItem[method];
+                        if (op && op.operationId && excludeSet.has(op.operationId)) {
+                            delete pathItem[method];
+                        }
                     });
-                    if (!has402) {
-                        filteredPaths[path] = filteredPathItem;
-                    }
                 }
-            }
-        });
-        return {
-            ...spec,
-            paths: filteredPaths
-        };
+            });
+        }
+        return cleanSpec;
     }
     async load() {
-        if (this.intervalId) {
-            return this.cache;
+        const specData = await this.fetchSpec();
+        if (!specData) {
+            this.cache = null;
+            return;
         }
-        const result = await this.fetchSpec();
-        if (!result) {
-            return { success: false, message: 'Kon geen spec ophalen' };
+        const { spec, hash } = specData;
+        if (this.cache?.hash === hash) {
+            return;
         }
-        this.cache = {
-            spec: result.spec,
-            hash: result.hash,
-            lastUpdated: new Date(),
-            isValid: true,
-            toolCount: this.countTools(result.spec)
-        };
+        this.cache = specData;
         this.lastCheck = Date.now();
+    }
+    refresh() {
+        return this.load();
+    }
+    getCache() {
+        return this.cache;
+    }
+    startAutoRefresh() {
         this.intervalId = setInterval(async () => {
             await this.refresh();
         }, fixedConfig.refreshIntervalMs);
-        return this.cache;
     }
-    async refresh() {
-        if (!this.intervalId || !this.cache) {
-            return { success: false, message: 'Geen cache' };
-        }
-        const result = await this.fetchSpec();
-        if (!result) {
-            console.warn('Spec refresh mislukt, gebruik laatste versie');
-            return { success: false, message: 'Kan nieuwe spec niet ophalen' };
-        }
-        if (result.hash === this.cache.hash) {
-            console.debug('Spec niet veranderd, gebruik cache');
-            this.cache.lastUpdated = new Date();
-            return { success: false, message: 'Spec niet veranderd' };
-        }
-        const newToolCount = this.countTools(result.spec);
-        console.info(`Spec gewijzigd: ${result.spec.info?.version || 'nieuw'}`);
-        this.cache = {
-            spec: result.spec,
-            hash: result.hash,
-            lastUpdated: new Date(),
-            isValid: true,
-            toolCount: newToolCount
-        };
-        return { success: true, message: 'Spec vernieuwd' };
-    }
-    countTools(spec) {
-        let count = 0;
-        Object.values(spec.paths || {}).forEach((pathItem) => {
-            if (typeof pathItem === 'string')
-                return;
-            Object.values(pathItem).forEach((op) => {
-                if (op && op.operationId)
-                    count++;
-            });
-        });
-        return count;
-    }
-    async get() {
-        if (this.cache && this.cache.isValid) {
-            return this.cache;
-        }
-        const result = await this.fetchSpec();
-        if (!result) {
-            if (!this.cache) {
-                return null;
-            }
-            return {
-                spec: this.cache.spec,
-                hash: this.cache.hash,
-                error: 'Kan geen nieuwe spec ophalen, gebruik laatste versie'
-            };
-        }
-        this.cache = {
-            spec: result.spec,
-            hash: result.hash,
-            lastUpdated: result.lastUpdated || new Date(),
-            isValid: result.valid,
-            toolCount: result.toolCount
-        };
-        return this.cache;
-    }
-    stop() {
+    stopAutoRefresh() {
         if (this.intervalId) {
             clearInterval(this.intervalId);
             this.intervalId = null;
         }
     }
-    getCache() {
-        return this.cache;
+    async invalidateCache() {
+        this.stopAutoRefresh();
+        this.cache = null;
     }
 }

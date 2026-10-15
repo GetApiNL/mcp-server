@@ -42,7 +42,7 @@
   },
   "host": "api.getapi.nl",
   "spec": {
-    "url": "https://getapi.nl/docs/api.json",
+    "url": "https://api.getapi.nl/docs/api.json",
     "validated": true
   },
   "timeout": {

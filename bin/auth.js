@@ -3,7 +3,7 @@
  */
 // Vaste configuratie
 export const fixedConfig = {
-    specUrl: 'https://getapi.nl/docs/api.json',
+    specUrl: 'https://api.getapi.nl/docs/api.json',
     baseUrl: 'https://api.getapi.nl',
     authHeader: 'X-Api-Key',
     refreshIntervalMs: 60 * 60 * 1000, // 1 uur
