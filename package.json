@@ -1,0 +1,52 @@
+{
+  "type": "module",
+  "name": "getapi-mcp",
+  "version": "0.1.0",
+  "description": "MCP-server for GetApi API - exposes GetApi endpoints as MCP tools",
+  "main": "dist/index.js",
+  "bin": {
+    "getapi-mcp": "./dist/bin.js"
+  },
+  "scripts": {
+    "build": "tsc && node scripts/copy-dist.js",
+    "dev": "ts-node src/index.ts",
+    "start": "node dist/index.js",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "lint": "eslint src/**/*.ts",
+    "typecheck": "tsc --noEmit",
+    "generate:tools": "node scripts/validate-spec.js"
+  },
+  "keywords": [
+    "mcp",
+    "getapi",
+    "api",
+    "tool",
+    "javascript"
+  ],
+  "author": "",
+  "license": "MIT",
+  "mcpName": "io.github.willemoostra/getapi-mcp",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "axios": "^1.6.0",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "@types/supertest": "^6.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.56.0",
+    "jest": "^29.7.0",
+    "supertest": "^6.3.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.3.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  }
+}

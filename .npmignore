@@ -1,0 +1,38 @@
+# Development files
+.git
+.gitignore
+.DS_Store
+*.test.ts
+*.spec.ts
+*.md
+coverage/
+.vscode/
+node_modules/
+npm-debug.log
+
+# Test fixtures
+test/fixtures/*.json
+test/fixtures/*.yaml
+
+# Local configuration
+.env
+.env.local
+
+# Development scripts
+scripts/
+
+# Local configuration files
+getapi-spec.json
+server.json
+getapi-mcp-specificatie.md
+CHANGELOG.md
+
+# Test files
+*.test.ts
+test/*.ts
+test/*.spec.ts
+
+# Dist folder except for main files
+dist/*
+!dist/index.js
+!dist/bin.js

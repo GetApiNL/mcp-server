@@ -1,23 +1,52 @@
 {
-  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
-  "name": "nl.getapi/nlgetapi-mcp",
-  "version": "1.0.0",
-  "description": "Officiële GetAPI.nl MCP server voor lookup APIs (postcode, RDW, KVK, DNS, BTW, SBI, IP, energielabel, en meer).",
-  "title": "GetAPI.nl MCP Server",
-  "websiteUrl": "https://getapi.nl",
-  "remotes": [
-    {
-      "url": "https://api.getapi.nl/api/mcp",
-      "transport": {
-        "type": "streamable-http"
-      },
-      "headers": {
-        "X-Api-Key": "${GETAPI_API_KEY}"
+  "name": "getapi-mcp",
+  "description": "MCP-server for GetApi API - exposes GetApi endpoints as MCP tools",
+  "version": "0.1.0",
+  "command": "npx",
+  "args": ["getapi-mcp"],
+  "mcpServers": {
+    "getapi": {
+      "command": "npx",
+      "args": ["-y", "getapi-mcp@0.1.0"],
+      "env": {
+        "API_KEY": "PLACEHOLDER"
       }
     }
+  },
+  "repository": "https://github.com/GetApiNl/mcp-server",
+  "homepage": "https://getapi.nl",
+  "keywords": ["mcp", "getapi", "api", "tool", "openapi", "ai"],
+  "license": "MIT",
+  "platforms": [
+    {
+      "name": "node",
+      "version": ">=20.0.0"
+    }
   ],
-  "repository": {
-    "url": "https://github.com/GetApiNL/getapi-mcp",
-    "source": "github"
+  "auth": {
+    "type": "env-var",
+    "var": "API_KEY",
+    "required": true,
+    "description": "GetApi API key (ga_live_ or ga_test_ prefix)"
+  },
+  "features": {
+    "automaticUpdate": {
+      "enabled": true,
+      "interval": "1h",
+      "description": "Automatically refreshes tools when GetApi spec changes"
+    },
+    "x402Excluded": {
+      "enabled": true,
+      "description": "x402 (payment) endpoints excluded"
+    }
+  },
+  "host": "api.getapi.nl",
+  "spec": {
+    "url": "https://getapi.nl/docs/api.json",
+    "validated": true
+  },
+  "timeout": {
+    "request": "10s",
+    "spec": "10s"
   }
 }
