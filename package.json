@@ -26,7 +26,7 @@
   ],
   "author": "",
   "license": "MIT",
-  "mcpName": "io.github.willemoostra/getapi-mcp",
+  "mcpName": "io.github.getapinl/getapi-mcp",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "axios": "^1.6.0",
