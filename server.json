@@ -13,7 +13,7 @@
       }
     }
   },
-  "repository": "https://github.com/GetApiNl/mcp-server",
+  "repository": "https://github.com/GetApiNL/mcp-server",
   "homepage": "https://getapi.nl",
   "keywords": ["mcp", "getapi", "api", "tool", "openapi", "ai"],
   "license": "MIT",
