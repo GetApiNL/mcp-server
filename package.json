@@ -4,17 +4,28 @@
   "version": "0.1.0",
   "description": "MCP-server for GetApi API - exposes GetApi endpoints as MCP tools",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "bin": {
     "getapi-mcp": "./dist/bin.js"
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "build": "tsc && node scripts/copy-dist.js",
+    "build": "tsc",
     "dev": "ts-node src/index.ts",
-    "start": "node dist/index.js",
+    "start": "node dist/bin.js",
     "test": "jest",
     "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:package": "node scripts/pack-smoke.mjs",
+    "test:live": "node scripts/live-contract.mjs",
+    "check:docs": "node scripts/check-docs.mjs",
     "lint": "eslint src/**/*.ts",
     "typecheck": "tsc --noEmit",
+    "validate": "npm run typecheck && npm run lint && npm run build && npm run test:coverage",
+    "verify": "npm run validate && npm run check:docs && npm run test:package",
+    "prepublishOnly": "npm run verify",
     "generate:tools": "node scripts/validate-spec.js"
   },
   "keywords": [
@@ -37,9 +48,11 @@
     "@types/supertest": "^6.0.0",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
+    "ajv": "^6.15.0",
     "eslint": "^8.56.0",
     "jest": "^29.7.0",
     "supertest": "^6.3.0",
+    "ts-jest": "^29.1.0",
     "ts-node": "^10.9.0",
     "typescript": "^5.3.0"
   },

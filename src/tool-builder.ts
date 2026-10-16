@@ -5,136 +5,86 @@
  */
 
 import { z } from 'zod';
+import type { ZodTypeAny, ZodRawShape } from 'zod';
 import { fixedConfig } from './auth.js';
 import { HttpClient } from './http-client.js';
+import type { ParamLocation } from './http-client.js';
 
-// Type definitions for OpenAPI spec
-type ParameterObject = {
-  in: string;
+export type ToolDefinition = {
   name: string;
-  required?: boolean;
-  schema?: any;
-};
-
-type MediaTypeObject = {
-  schema?: any;
-  content?: Record<string, any>;
-};
-
-type OperationObject = {
-  operationId: string;
-  tags?: (string | { name: string })[];
-  parameters?: ParameterObject[];
-  requestBody?: {
-    required?: boolean;
-    content: Record<string, MediaTypeObject>;
-  };
-};
-
-type OpenAPISpec = {
-  paths?: Record<string, string | { [key: string]: any }>;
-};
-
-// Type definitions for schema objects (these are empty objects until populated)
-type SchemaObject = {
-  [key: string]: any;
-};
-
-// Type definitions for OpenAPI spec
-type OpenAPIParameterObject = {
-  in: string;
-  name: string;
-  required?: boolean;
-  schema?: { type?: string; [key: string]: any };
-};
-
-type OpenAPIMediaTypeObject = {
-  schema?: { type?: string; [key: string]: any };
-  [key: string]: any;
-};
-
-type OpenAPIOperationObject = {
-  operationId: string;
-  tags?: (string | { name: string })[];
-  parameters?: OpenAPIParameterObject[];
-  requestBody?: {
-    required?: boolean;
-    content: Record<string, OpenAPIMediaTypeObject>;
-  };
+  description: string;
+  inputSchema: ZodRawShape;
+  handler: (args: any) => Promise<any>;
 };
 
 export class ToolBuilder {
   specLoader: any;
   apiKey: string;
-  
+  http: HttpClient;
+
   constructor(specLoader: any, apiKey: string) {
     this.specLoader = specLoader;
     this.apiKey = apiKey;
+    this.http = new HttpClient(apiKey);
   }
-  
-  async buildTools(): Promise<any[]> {
+
+  async buildTools(): Promise<ToolDefinition[]> {
     await this.specLoader.load();
-    const spec = this.specLoader.getCache().spec;
-    
+    const spec = this.specLoader.getCache()?.spec;
+
     if (!spec) {
       throw new Error('No spec available');
     }
-    
-    const toolDefs: any[] = [];
-    
-    const x402Paths = new Set();
-    
+
+    const toolDefs: ToolDefinition[] = [];
+
     Object.entries(spec.paths || {}).forEach(([path, pathItem]: [string, any]) => {
-      if (typeof pathItem === 'string') return;
-      
+      if (typeof pathItem === 'string' || !pathItem || typeof pathItem !== 'object') return;
+
       Object.entries(pathItem).forEach(([method, op]: [string, any]) => {
-        if (!op || !op.operationId) return;
-        
-        const tags = op.tags || [];
-        if (tags.some((tag: any) => {
-          if (typeof tag === 'object') {
-            return tag.name && tag.name.includes('x402');
-          }
-          return false;
-        })) {
-          x402Paths.add(path);
-        }
+        if (method === 'parameters' || method === 'summary' || method === 'description') return;
+        if (!op || typeof op !== 'object' || !op.operationId) return;
+
+        if (this.isX402(op)) return;
+
+        toolDefs.push(this.buildToolDefinition(path, method, op));
       });
     });
-    
-    Object.entries(spec.paths || {}).forEach(([path, pathItem]: [string, any]) => {
-      if (typeof pathItem === 'string') return;
-      
-      if (x402Paths.has(path)) return;
-      
-      Object.entries(pathItem).forEach(([method, op]: [string, any]) => {
-        if (!op || !op.operationId) return;
-        
-        const toolDef = this.buildToolDefinition(path, op);
-        toolDefs.push(toolDef);
-      });
-    });
-    
+
     return toolDefs;
   }
-  
-  buildToolDefinition(path: string, op: any) {
-    const paramsSchema = this.buildParamsSchema(path, op.parameters, op.requestBody);
-    
+
+  isX402(op: any): boolean {
+    if (op.x402) return true;
+    const tags = op.tags || [];
+    return tags.some((tag: any) => {
+      const name = typeof tag === 'string' ? tag : tag?.name;
+      return typeof name === 'string' && name.includes('x402');
+    });
+  }
+
+  buildToolDefinition(path: string, method: string, op: any): ToolDefinition {
+    const { shape, locations } = this.buildParamsSchema(op.parameters, op.requestBody);
+
     const handler = async (args: any) => {
-      const result = await this.executeCall(path, args, op, paramsSchema);
-      return result;
+      return this.executeCall(path, method, args, op, shape, locations);
     };
-    
+
     return {
       name: this.buildToolName(op.operationId),
-      paramsSchema,
+      description: this.buildDescription(path, method, op),
+      inputSchema: shape,
       handler
     };
   }
-  
+
+  buildDescription(path: string, method: string, op: any): string {
+    const summary = op.summary || op.description || op.operationId;
+    return `${summary} [${method.toUpperCase()} ${path}]`;
+  }
+
   buildToolName(operationId: string): string {
-    const parts = operationId
+    const parts = String(operationId)
       .split('.')
       .map((part: string) => {
         let result = part;
@@ -143,203 +93,173 @@ export class ToolBuilder {
         return result.toLowerCase();
       })
       .join('_');
-    
+
     return 'getapi_' + parts;
   }
-  
-  buildParamsSchema(path: string, parameters: any[] = [], requestBody: any): any {
-    const schema: SchemaObject = {};
-    
-    parameters.forEach((param: any) => {
+
+  buildParamsSchema(parameters: any[] = [], requestBody?: any): { shape: ZodRawShape; locations: Record<string, ParamLocation> } {
+    const shape: ZodRawShape = {};
+    const locations: Record<string, ParamLocation> = {};
+
+    (parameters || []).forEach((param: any) => {
+      if (!param || !param.name) return;
       if (param.in === 'cookie') return;
-      if (!param.schema || param.schema.type === 'object') return;
-      
-      const schemaType = this.mapOpenAPIToZod(param.schema);
-      const meta: SchemaObject = {
-        [param.in]: true,
-        required: param.required || false
-      };
-      
-      if (param.in === 'path') {
-        schema[param.name] = schemaType.meta
-          ? schemaType.meta.minimum !== undefined 
-            ? schemaType.meta
-            : { type: 'string' }
-          : { type: 'string' };
-        schema[param.name].meta = { ...meta, path: true };
-      } else if (param.in === 'header') {
-        if (param.name !== fixedConfig.authHeader) {
-          schema[param.name] = schemaType.meta
-            ? schemaType.meta
-            : { type: 'string', optional: true };
-          schema[param.name].meta = { ...meta, header: true, autoIncluded: true };
-        }
-      } else if (param.in === 'query') {
-        schema[param.name] = schemaType.meta
-          ? schemaType.meta
-          : { type: 'string', optional: true, nullable: true };
-        schema[param.name].meta = meta;
+      if (param.in === 'header' && param.name === fixedConfig.authHeader) return;
+
+      let zodType: ZodTypeAny = this.mapOpenAPIToZod(param.schema);
+
+      const required = param.in === 'path' ? true : !!param.required;
+      if (!required) {
+        zodType = zodType.optional();
       }
+      if (param.description) {
+        zodType = zodType.describe(param.description);
+      }
+
+      shape[param.name] = zodType;
+      locations[param.name] = param.in === 'path' || param.in === 'query' || param.in === 'header'
+        ? param.in
+        : 'query';
     });
-    
-    // Request body
+
     if (requestBody && requestBody.content) {
-      Object.entries(requestBody.content).forEach(([mediaType, contentSpec]: [string, any]) => {
-        if (mediaType === 'application/json') {
-          const bodySchema: SchemaObject = this.mapOpenAPIToZod(contentSpec.schema || {});
-          
-          const meta: SchemaObject = {
-            body: true,
-            required: requestBody.required || false
-          };
-          
-          // Add restrictions
-          const restrictions = this.buildRestrictions(contentSpec.schema || {});
-          
-          // Merge restrictions into schema
-          const schemaClone: SchemaObject = {};
-          Object.keys(schema).forEach((key: string) => {
-            if (key !== 'body') {
-              schemaClone[key] = schema[key];
-            }
-          });
-          
-          schema.body = bodySchema;
-          schema.body.meta = meta;
-          
-          // Merge restrictions
-          Object.keys(restrictions).forEach((key: string) => {
-            if (!schema[key] && key !== 'required' && key !== 'body') {
-              schema[key] = restrictions[key];
-            }
-          });
+      const jsonContent = requestBody.content['application/json'];
+      if (jsonContent) {
+        let bodyType = this.mapOpenAPIToZod(jsonContent.schema || {});
+        if (!requestBody.required) {
+          bodyType = bodyType.optional();
         }
-      });
+        shape['body'] = bodyType;
+        locations['body'] = 'body';
+      }
     }
-    
-    return z.object(schema);
+
+    return { shape, locations };
   }
-  
-  mapOpenAPIToZod(schema: any): any {
-    if (!schema) {
+
+  mapOpenAPIToZod(schema: any): ZodTypeAny {
+    if (!schema || typeof schema !== 'object') {
       return z.any();
     }
-    
+
+    if (Array.isArray(schema.enum) && schema.enum.length > 0) {
+      const literals = schema.enum
+        .filter((v: any) => ['string', 'number', 'boolean'].includes(typeof v))
+        .map((v: any) => z.literal(v));
+      if (literals.length === schema.enum.length && literals.length > 1) {
+        return z.union(literals as [ZodTypeAny, ZodTypeAny, ...ZodTypeAny[]]);
+      }
+      if (literals.length === 1) {
+        return literals[0];
+      }
+    }
+
     const type = schema.type;
-    
-    if (type === 'object') {
-      const objSchema: SchemaObject = {};
-      
+
+    if (type === 'object' || schema.properties) {
+      const objSchema: ZodRawShape = {};
+
       if (schema.properties) {
         Object.entries(schema.properties).forEach(([propName, propSchema]: [string, any]) => {
           objSchema[propName] = this.mapOpenAPIToZod(propSchema);
         });
       }
-      
-      if (schema.required) {
+
+      if (Array.isArray(schema.required)) {
         schema.required.forEach((propName: string) => {
           if (!objSchema[propName]) {
             objSchema[propName] = z.any();
           }
         });
       }
-      
+
       return z.object(objSchema);
     }
-    
-    if (type === 'array') {
-      return schema.items ? this.mapOpenAPIToZod(schema.items) : z.array(z.any());
+
+    switch (type) {
+      case 'array':
+        return z.array(schema.items ? this.mapOpenAPIToZod(schema.items) : z.any());
+      case 'string': {
+        let str: any = z.string();
+        if (schema.minLength !== undefined) str = str.min(schema.minLength);
+        if (schema.maxLength !== undefined) str = str.max(schema.maxLength);
+        if (schema.pattern) {
+          try {
+            str = str.regex(new RegExp(schema.pattern));
+          } catch {
+            // Ongeldige regex in spec: negeer de pattern-restrictie.
+          }
+        }
+        return str;
+      }
+      case 'number': {
+        let num: any = z.number();
+        if (schema.minimum !== undefined) num = num.min(schema.minimum);
+        if (schema.maximum !== undefined) num = num.max(schema.maximum);
+        return num;
+      }
+      case 'integer': {
+        let int: any = z.number().int();
+        if (schema.minimum !== undefined) int = int.min(schema.minimum);
+        if (schema.maximum !== undefined) int = int.max(schema.maximum);
+        return int;
+      }
+      case 'boolean':
+        return z.boolean();
+      case 'null':
+        return z.null();
+      default:
+        return z.any();
     }
-    
-    if (type === 'string') {
-      return z.string();
-    }
-    
-    if (type === 'number') {
-      return z.number();
-    }
-    
-    if (type === 'integer') {
-      return z.number().int();
-    }
-    
-    if (type === 'boolean') {
-      return z.boolean();
-    }
-    
-    if (type === 'null') {
-      return z.null().nullish();
-    }
-    
-    return z.any();
   }
-  
-  buildRestrictions(schema: any): any {
-    const restrictions: any = {};
-    
-    if (schema.enum) {
-      restrictions.enum = schema.enum;
-    }
-    if (schema.pattern) {
-      restrictions.pattern = schema.pattern;
-    }
-    if (schema.minimum !== undefined) {
-      restrictions.minimum = schema.minimum;
-    }
-    if (schema.maximum !== undefined) {
-      restrictions.maximum = schema.maximum;
-    }
-    if (schema.minLength !== undefined) {
-      restrictions.minLength = schema.minLength;
-    }
-    if (schema.maxLength !== undefined) {
-      restrictions.maxLength = schema.maxLength;
-    }
-    
-    return restrictions;
-  }
-  
-  async executeCall(path: string, args: any, op: any, paramsSchema: any): Promise<any> {
-    const http = new HttpClient(this.apiKey);
-    
-    const validatedParams = paramsSchema.safeParse(args);
-    
-    if (!validatedParams.success) {
-      // Return MCP-formatted error
+
+  async executeCall(
+    path: string,
+    method: string,
+    args: any,
+    op: any,
+    shape: ZodRawShape,
+    locations: Record<string, ParamLocation>
+  ): Promise<any> {
+    const validated = z.object(shape).safeParse(args ?? {});
+
+    if (!validated.success) {
       return {
         content: [
-          { type: 'text', text: 'Parameter validation failed: ' + (validatedParams.error?.message || 'Unknown error') }
+          { type: 'text', text: 'Parameter validation failed: ' + validated.error.message }
         ],
         isError: true
       };
     }
-    
-    const params = validatedParams.data;
-    
-    const result = await http.request(path, params, op);
-    
+
+    const result = await this.http.request(path, validated.data, { ...op, method }, locations);
+
     return this.parseResponse(result);
   }
-  
+
   parseResponse(result: any): any {
     const status = result.status;
-    
+
     if (status >= 200 && status < 300) {
+      const data = result.data === undefined ? null : result.data;
       return {
         content: [
-          { type: 'text', text: JSON.stringify(result.data) }
+          { type: 'text', text: typeof data === 'string' ? data : JSON.stringify(data) }
         ],
         isError: false
       };
-    } else {
-      const message = result.data?.message || result.data?.error?.message || 'Error';
-      
-      return {
-        content: [
-          { type: 'text', text: 'Error: ' + message }
-        ],
-        isError: true
-      };
     }
+
+    const message =
+      result.data?.error?.message ||
+      result.data?.message ||
+      (typeof result.data === 'string' ? result.data : 'Error');
+
+    return {
+      content: [
+        { type: 'text', text: `Error ${status}: ${message}` }
+      ],
+      isError: true
+    };
   }
 }

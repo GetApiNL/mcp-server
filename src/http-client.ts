@@ -5,187 +5,124 @@
  */
 
 import axios from 'axios';
-import type { AxiosResponse, InternalAxiosRequestConfig } from 'axios';
+import type { AxiosResponse } from 'axios';
 import { fixedConfig } from './auth.js';
+
+export type ParamLocation = 'path' | 'query' | 'header' | 'body';
+
+export type HttpClientOptions = {
+  baseUrl?: string;
+  timeoutMs?: number;
+  maxResponseSize?: number;
+};
 
 export class HttpClient {
   client: any;
-  
-  constructor(apiKey: string) {
+  baseUrl: string;
+  timeoutMs: number;
+  maxResponseSize: number;
+
+  constructor(apiKey: string, options: HttpClientOptions = {}) {
+    this.baseUrl = options.baseUrl ?? fixedConfig.baseUrl;
+    this.timeoutMs = options.timeoutMs ?? fixedConfig.timeoutMs;
+    this.maxResponseSize = options.maxResponseSize ?? fixedConfig.maxResponseSize;
+
     this.client = axios.create({
-      baseURL: fixedConfig.baseUrl,
-      timeout: fixedConfig.timeoutMs,
+      baseURL: this.baseUrl,
+      timeout: this.timeoutMs,
       headers: {
         'X-Api-Key': apiKey,
         'Content-Type': 'application/json'
       },
-      maxBodyLength: fixedConfig.maxResponseSize,
-      maxContentLength: fixedConfig.maxResponseSize,
+      maxBodyLength: this.maxResponseSize,
+      maxContentLength: this.maxResponseSize,
       validateStatus: (status: number) => status >= 200 && status < 600
     });
-    
+
     // Request interceptor voor host control
     this.client.interceptors.request.use((config: any) => {
       if (config.url) {
-        const parsedUrl = new URL(config.url, fixedConfig.baseUrl);
-        
-        if (parsedUrl.origin !== fixedConfig.baseUrl) {
+        const parsedUrl = new URL(config.url, this.baseUrl);
+
+        if (parsedUrl.origin !== this.baseUrl) {
           throw new Error('Host niet toegestaan: ' + config.url);
         }
       }
-      
+
       return config;
     });
-    
-    // Response interceptor
-    this.client.interceptors.response.use(
-      (response: AxiosResponse) => response,
-      (error: any) => this.handleRequestError(error)
-    );
   }
-  
-  async request(path: string, params: any = {}, op: any = {}): Promise<any> {
+
+  async request(path: string, params: any = {}, op: any = {}, paramMap: Record<string, ParamLocation> = {}): Promise<any> {
     const startTime = Date.now();
-    
-    const method = op.method || 'GET';
-    const url = this.buildUrl(path, params);
-    
+
+    const method = (op.method || 'GET').toUpperCase();
+
+    const pathParams: Record<string, any> = {};
+    const queryParams: Record<string, any> = {};
+    const headerParams: Record<string, any> = {};
+    let body: any;
+
+    Object.entries(params || {}).forEach(([key, value]: [string, any]) => {
+      if (value === undefined || value === null || value === '') return;
+      const location = paramMap[key] || 'query';
+
+      if (location === 'path') pathParams[key] = value;
+      else if (location === 'header') headerParams[key] = value;
+      else if (location === 'body') body = value;
+      else queryParams[key] = value;
+    });
+
+    const url = this.buildUrl(path, pathParams);
+
     const config = {
       method,
       url,
-      params: params,
-      timeout: fixedConfig.timeoutMs,
-      headers: {},
+      params: queryParams,
+      data: body,
+      timeout: this.timeoutMs,
+      headers: headerParams,
       validateStatus: (status: number) => status >= 200 && status < 600,
-      maxBodyLength: fixedConfig.maxResponseSize,
-      maxContentLength: fixedConfig.maxResponseSize
+      maxBodyLength: this.maxResponseSize,
+      maxContentLength: this.maxResponseSize
     };
-    
+
     try {
-      const response = await this.client(config);
-      
+      const response: AxiosResponse = await this.client(config);
+
       // Check response size
       if (response.data) {
         const size = JSON.stringify(response.data).length;
-        if (size > fixedConfig.maxResponseSize) {
+        if (size > this.maxResponseSize) {
           throw new Error('Response te groot: ' + Math.round(size / 1024) + ' KB');
         }
       }
-      
+
       const duration = Date.now() - startTime;
-      
+
       // Log resultaat (zonder API-key)
-      this.logRequest(path, method, params, response.status, response.headers, duration);
-      
+      this.logRequest(path, method, params, response.status, duration);
+
       return {
         status: response.status,
         data: response.data,
         headers: response.headers || {}
       };
     } catch (error: any) {
-      if (error.response) {
-        return {
-          status: error.response.status,
-          data: error.response.data,
-          headers: error.response.headers
-        };
-      } else if (error.code === 'ECONNABORTED') {
-        return {
-          status: 504,
-          data: {
-            error: {
-              code: 'TIMEOUT',
-              message: 'Request timeout (' + fixedConfig.timeoutMs + 'ms)'
-            }
-          },
-          headers: {}
-        };
-      } else if (error.code === 'ECONNREFUSED') {
-        return {
-          status: 503,
-          data: {
-            error: {
-              code: 'UNAVAILABLE',
-              message: 'Server not available'
-            }
-          },
-          headers: {}
-        };
-      } else if (error.code === 'ENOTFOUND') {
-        return {
-          status: 503,
-          data: {
-            error: {
-              code: 'UNAVAILABLE',
-              message: 'Server not found'
-            }
-          },
-          headers: {}
-        };
-      } else {
-        return {
-          status: 500,
-          data: {
-            error: {
-              code: 'INTERNAL',
-              message: 'Internal server error'
-            }
-          },
-          headers: {}
-        };
-      }
+      return this.handleRequestError(error);
     }
   }
-  
-  buildUrl(path: string, params: any = {}): string {
-    const url = this.fillParams(path, params);
-    return this.encodePath(url);
-  }
-  
-  fillParams(path: string, params: any = {}): string {
-    let urlWithParams = path.replace(/\{([^}]+)\}/g, (_, name: string) => {
-      const value = params[name];
+
+  buildUrl(path: string, pathParams: Record<string, any> = {}): string {
+    return path.replace(/\{([^}]+)\}/g, (_, name: string) => {
+      const value = pathParams[name];
       if (value !== undefined && value !== null && value !== '') {
-        return encodeURIComponent(value);
+        return encodeURIComponent(String(value));
       }
       return `_${name}_`;
     });
-    
-    const hasQuery = urlWithParams.includes('?');
-    if (!hasQuery) {
-      const query = Object.entries(params)
-        .filter(([key]: [string, any]) => 
-          !urlWithParams.includes(`?${encodeURIComponent(key)}`)
-        )
-        .map(([key, value]: [string, any]) => {
-          if (value === undefined || value === null || value === '') {
-            return;
-          }
-          if (Array.isArray(value)) {
-            return `${encodeURIComponent(key)}=${value.join(',')}`;
-          }
-          return `${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
-        })
-        .filter(Boolean)
-        .join('&');
-      
-      if (query) {
-        urlWithParams += '?' + query;
-      }
-    }
-    
-    return urlWithParams;
   }
-  
-  encodePath(path: string): string {
-    return path.split('/').map(segment => {
-      if (segment.match(/^\{|\}$/)) {
-        return segment;
-      }
-      return encodeURIComponent(segment);
-    }).join('/');
-  }
-  
+
   handleRequestError(error: any): any {
     if (error.response) {
       return {
@@ -193,13 +130,13 @@ export class HttpClient {
         data: error.response.data,
         headers: error.response.headers
       };
-    } else if (error.code === 'ECONNABORTED') {
+    } else if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
       return {
         status: 504,
         data: {
           error: {
             code: 'TIMEOUT',
-            message: 'Request timeout (' + fixedConfig.timeoutMs + 'ms)'
+            message: 'Request timeout (' + this.timeoutMs + 'ms)'
           }
         },
         headers: {}
@@ -232,23 +169,15 @@ export class HttpClient {
         data: {
           error: {
             code: 'INTERNAL',
-            message: 'Internal server error'
+            message: error?.message ? String(error.message) : 'Internal server error'
           }
         },
         headers: {}
       };
     }
   }
-  
-  handleErrorResponse(response: any): any {
-    return {
-      status: response.status,
-      data: response.data,
-      headers: response.headers
-    };
-  }
-  
-  logRequest(path: string, method: string, params: any, status: number, headers: any, duration: number): void {
+
+  logRequest(path: string, method: string, params: any, status: number, duration: number): void {
     const logData = {
       method,
       path,
@@ -256,17 +185,18 @@ export class HttpClient {
       status,
       duration: duration < 1000 ? duration + 'ms' : (duration / 1000).toFixed(2) + 's'
     };
-    
+
+    // Altijd naar stderr: stdout is gereserveerd voor het MCP (JSON-RPC) protocol.
     console.error(JSON.stringify(logData));
   }
-  
+
   redactParams(params: any): any {
     if (!params) return params;
-    
+
     const result: any = {};
-    
+
     Object.entries(params).forEach(([key, value]: [string, any]) => {
-      if (key === 'X-Api-Key') {
+      if (key === fixedConfig.authHeader) {
         result[key] = '[REDACTED]';
       } else if (Array.isArray(value)) {
         result[key] = value.map(v => this.redactParamValue(v));
@@ -274,21 +204,21 @@ export class HttpClient {
         result[key] = this.redactParamValue(value);
       }
     });
-    
+
     return result;
   }
-  
+
   redactParamValue(value: any): any {
     if (value === null || value === undefined || value === '') {
       return value;
     }
-    
+
     const strVal = String(value);
-    
+
     if (strVal.startsWith('ga_live_') || strVal.startsWith('ga_test_')) {
       return '[API_KEY]';
     }
-    
+
     return value;
   }
 }

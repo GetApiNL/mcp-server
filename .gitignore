@@ -1,0 +1,9 @@
+node_modules/
+dist/
+bin/
+coverage/
+.DS_Store
+*.png
+*.svg
+.mcp_server/
+.server/

@@ -8,13 +8,6 @@ import axios from 'axios';
 import { z } from 'zod';
 import { fixedConfig } from './auth.js';
 
-// Spec Hash Schema
-const SpecHashSchema = z.object({
-  hash: z.string().min(1),
-  lastUpdated: z.string().datetime().optional(),
-  valid: z.boolean().default(false)
-});
-
 // Spec Validation Schema  
 const SpecValidationSchema = z.object({
   openapi: z.string().min(1),
@@ -41,17 +34,13 @@ export class SpecLoader {
   }
   
   async fetchSpec(): Promise<any> {
-    const startTime = Date.now();
-    
     try {
       const response = await axios.get(fixedConfig.specUrl, {
         headers: { 'X-Api-Key': this.apiKey },
         timeout: this.timeoutMs,
         validateStatus: (status: number) => status >= 200 && status < 600
       });
-      
-      const duration = Date.now() - startTime;
-      
+
       // Controleer Content-Type header
       const contentType = response.headers['content-type']?.toString() || '';
       if (!contentType.includes('application/json')) {
@@ -73,8 +62,6 @@ export class SpecLoader {
           console.error(`Fout bij parsen van spec: ${response.data.substring(0, 200)}...`);
           return null;
         }
-        
-        const hash = this.computeHash(spec);
         
         if (!this.validateSpec(spec)) {
           console.error('Spec is ongeldig OpenAPI');
@@ -176,12 +163,15 @@ export class SpecLoader {
   
   excludeX402(spec: any): any {
     const excludeSet = new Set([...fixedConfig.x402ExcludedOperations]);
-    const cleanSpec: any = { ...spec };
-    
-    if (cleanSpec.paths) {
-      Object.keys(cleanSpec.paths).forEach(path => {
-        const pathItem = cleanSpec.paths[path];
-        if (typeof pathItem === 'object') {
+    const cleanSpec: any = { ...spec, paths: {} };
+
+    if (spec.paths) {
+      Object.keys(spec.paths).forEach(path => {
+        const original = spec.paths[path];
+        const pathItem = original && typeof original === 'object' ? { ...original } : original;
+        cleanSpec.paths[path] = pathItem;
+
+        if (pathItem && typeof pathItem === 'object') {
           const methods = ['get', 'post', 'put', 'delete', 'patch', 'options', 'head', 'trace'];
           methods.forEach(method => {
             const op = pathItem[method];
@@ -192,7 +182,7 @@ export class SpecLoader {
         }
       });
     }
-    
+
     return cleanSpec;
   }
   
@@ -204,7 +194,7 @@ export class SpecLoader {
       return;
     }
     
-    const { spec, hash } = specData;
+    const { hash } = specData;
     
     if (this.cache?.hash === hash) {
       return;

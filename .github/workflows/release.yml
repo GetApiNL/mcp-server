@@ -24,21 +24,20 @@ jobs:
       - name: Install dependencies
         run: npm ci
       
-      - name: Run lint
-        run: npm run lint
-      
-      - name: Run typecheck
+      - name: Typecheck
         run: npm run typecheck
+      
+      - name: Lint
+        run: npm run lint
       
       - name: Build
         run: npm run build
       
-      - name: Run tests
-        run: npm test
+      - name: Tests (unit + e2e, met coverage-thresholds)
+        run: npm run test:coverage
       
-      - name: Test CLI
-        run: |
-          node dist/bin.js --help
+      - name: Package smoke test (gepubliceerd artefact)
+        run: npm run test:package
       
   publish:
     needs: test
