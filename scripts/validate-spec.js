@@ -13,7 +13,7 @@ import { z } from 'zod';
 // Vaste instellingen
 const FIXED_CONFIG = {
   baseUrl: 'https://api.getapi.nl',
-  specUrl: 'https://getapi.nl/docs/api.json',
+  specUrl: 'https://api.getapi.nl/docs/api.json',
   authHeader: 'X-Api-Key'
 };
 
