@@ -250,7 +250,7 @@ MIT License - zie [LICENSE](LICENSE) voor details.
 ## Support
 
 Voor vragen, bugs en suggesties, neem contact op via:
-- Email: willem@oostra.nl
+- Email: info@wdnoord.nl
 - GitHub Issues: https://github.com/GetApiNL/mcp-server/issues
 
 ---
