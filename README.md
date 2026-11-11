@@ -1,258 +1,203 @@
 # GetApi MCP Server
 
-Een MCP-server die de GetApi-API beschikbaar maakt voor AI-clients zoals Claude Desktop.
+Eén endpoint met 33 tools voor Nederlandse overheids- en registerdata: KVK, BAG, WOZ, energielabel, kenteken, DSO, NDW en validatie.
 
-## Installatie
+De server draait hosted op `https://api.getapi.nl/mcp`. Installeren is niet nodig.
 
-Installeer de server via npm:
+## Snel starten
 
-```bash
-npm install -g getapi-mcp
-```
-
-## Wat het doet
-
-Deze server maakt alle GetApi API-endpoints beschikbaar als tools voor AI-clients. De server communiceert via stdio en wordt gestart met `npx getapi-mcp`. De API-key wordt uitsluitend via de omgevingsvariabele `API_KEY` ingesteld.
-
-## Vereisten
-
-- Node.js 20 LTS of nieuwer
-- Een actieve GetApi API-key
-
-## Configuratie
-
-### CLI gebruik
-
-```bash
-npx getapi-mcp
-```
-
-### MCP Server configuratie
-
-Voeg de volgende configuratie toe aan de MCP-configuratie van je client (bijvoorbeeld `claude_desktop_config.json` voor Claude Desktop):
+Voeg dit toe aan de MCP-configuratie van je client (`claude_desktop_config.json`, `mcp.json` of vergelijkbaar):
 
 ```json
 {
   "mcpServers": {
     "getapi": {
-      "command": "npx",
-      "args": ["-y", "getapi-mcp@0.1.0"],
-      "env": {
-        "API_KEY": "ga_live_xxxxxxxxxxxxxxxxxxxx"
+      "type": "http",
+      "url": "https://api.getapi.nl/mcp",
+      "headers": {
+        "X-Api-Key": "ga_live_xxxxxxxxxxxxxxxxxxxx"
       }
     }
   }
 }
 ```
 
-**Belangrijk**: De API-key wordt **alleen** via `env` ingesteld. De server redigeert de key volledig uit logs en output.
+- Transport: streamable HTTP, protocolversie 2025-06-18
+- `initialize` en `tools/list` antwoorden zonder sleutel, zodat je eerst kunt zien wat er is
+- `tools/call` vraagt een sleutel en antwoordt zonder sleutel met 401
 
-## API Key verkrijgen
+## Authenticatie
 
-Je moet een actieve API-key van [GetApi](https://getapi.nl/dashboard) hebben. Zie hun dashboard voor informatie over het aanmaken en beheren van keys.
+| Route | Header | Waarvoor |
+|---|---|---|
+| API-sleutel | `X-Api-Key: ga_live_...` | normaal gebruik |
+| Bearer-token | `Authorization: Bearer ga_live_...` | clients die alleen Bearer ondersteunen |
+| x402 | betaling per call vanuit een wallet | agent zonder account |
 
-**Opmerking**: De key moet het formaat `ga_live_xxxxx` of `ga_test_xxxxx` hebben.
+Een sleutel maak je aan in het [dashboard](https://getapi.nl/dashboard). Het formaat is `ga_live_...` of `ga_test_...`. Maak per client een eigen sleutel, dan zie je het verbruik apart terug.
 
-## Beschikbare tools
+## Kosten
 
-De tool-lijst wordt automatisch gegenereerd uit de GetApi OpenAPI spec en wordt elk uur geüpdatet.
+De MCP-server is een dunne laag over dezelfde endpoints als de REST-API. Je verbruikt dezelfde credits per call en er is geen apart MCP-abonnement. Zonder sleutel kun je de tools bekijken, niet aanroepen.
 
-### Voorbeeld tools
+## Tools
 
-| Tool | Omschrijving |
-|------|-------------|
-| `getapi_kadaster_bag_address` | Adres zoeken op postcode en huisnummer (BAG) |
-| `getapi_kadaster_bag_address-suggest` | Adres-autocomplete suggesties |
-| `getapi_kadaster_bag_id` | Adres zoeken op nummeraanduiding-ID |
-| `getapi_lookup_postcode` | Postcode-lookup (NL) |
-| `getapi_lookup_ip` | IP-/ISP-informatie |
-| `getapi_validation_iban` | IBAN / BIC valideren |
-| `getapi_validation_vat` | EU BTW-nummer valideren (VIES) |
-| `getapi_property_pandgegevens` | Pandgegevens op postcode en huisnummer |
-| `getapi_rdw_vehicle` | Voertuig op kenteken (RDW) |
-| `getapi_lookup_dns_records` | DNS-records van een domein |
-| ... | De volledige lijst wordt uit de OpenAPI spec gegenereerd |
+De lijst wordt gegenereerd uit de OpenAPI-specificatie van GetApi. Namespaces zijn gescheiden met punten.
 
-Bekijk de [GetApi API-documentatie](https://getapi.nl/docs) voor de volledige lijst van endpoints.
+### Adres, pand en energie
 
-## Gebruik
+| Tool | Wat het doet |
+|---|---|
+| `kadaster.bag.address` | Adres op postcode en huisnummer (BAG) |
+| `kadaster.bag.address.suggest` | Adres-suggesties voor autocomplete |
+| `kadaster.bag.id` | Adres op nummeraanduiding-ID |
+| `property.pandgegevens` | Pandgegevens, uitgebreid |
+| `property.pandgegevens.lite` | Pandgegevens, licht |
+| `property.woz.waarde` | WOZ-waarde |
+| `property.energy.label` | Geregistreerd energielabel |
+| `lookup.postcode` | Postcode-lookup |
 
-### Tool aanroepen
+### Bedrijven
 
-1. Klik op het MCP icoontje (meestal in de chat interface)
-2. Voeg de GetApi server toe als een MCP server
-3. Klik op een tool in het MCP paneel
-4. Vul de vereiste parameters in
-5. De tool wordt uitgevoerd en het resultaat wordt weergegeven
+| Tool | Wat het doet |
+|---|---|
+| `kvk.validate` | KVK-nummer geldig? |
+| `kvk.search` | Bedrijven zoeken op naam of nummer |
+| `kvk.detail` | KVK-detail: naam, adres, status |
+| `cbs.sbi` | SBI-codetabel |
+| `cbs.sbi.search` | SBI-codes zoeken op tekst |
+| `cbs.sbi.detail` | SBI-code met titel en classificatiepad |
 
-### Foutcodes
+### Voertuigen en mobiliteit
 
-Als er een netwerkfout optreedt, krijg je een specifiek foutbericht:
+| Tool | Wat het doet |
+|---|---|
+| `rdw.vehicle` | Voertuig op kenteken (uitgebreide respons) |
+| `ndw.laadpunten` | Laadpunten in Nederland |
+| `ndw.laadpunten.detail` | Laadpunt-detail (EVSE) |
+| `ndw.emissiezones` | Milieuzones |
+| `ndw.emissiezones.detail` | Milieuzone-detail |
+| `ndw.truckparking` | Truckparkings |
+| `ndw.truckparking.detail` | Truckparking-detail |
 
-| Code | Omschrijving | Oplossing |
-|------|-------------|-----------|
-| `404` | Resource niet gevonden | Check de URL en parameters |
-| `400` | Fout bij parameters | Controleer de parameters op syntaxis |
-| `422` | Validatiefout | Controleer de parameter types |
-| `503` | Server tijdelijk niet beschikbaar | Probeer het later opnieuw |
-| `TIMEOUT` | Request time-out | Verhoog de timeout |
-| `401` | Ongeldige API key | Controleer je API key |
+### Omgeving
 
-### Beveiliging
+| Tool | Wat het doet |
+|---|---|
+| `dso.plans` | Bestemmingsplannen (Wro) op locatie |
+| `dso.documents` | Omgevingsdocumenten zoeken |
 
-- De API-key wordt **nooit** in logs, output of tool-results weergegeven
-- Alle verzoeken gaan alleen naar `https://api.getapi.nl`
-- De server redacteert automatisch API-keys in logs
-- Keys worden nooit naar GetApi verzonden
+### Validatie en netwerk
 
-## Automatische updates
+| Tool | Wat het doet |
+|---|---|
+| `validation.email` | E-mailadres valideren (RFC en MX) |
+| `validation.email.batch` | Tot 25 e-mailadressen per call |
+| `validation.email.disposable` | Disposable-domeincheck |
+| `validation.iban` | IBAN en BIC valideren, offline |
+| `validation.vat` | Btw-nummer via VIES |
+| `validation.dnsbl` | IP tegen vijf DNS-blacklists |
+| `lookup.dns.nameservers` | Nameservers van een domein |
+| `lookup.dns.records` | DNS-records per type |
+| `lookup.ip` | IP-locatie en ISP |
+| `scraping.email` | E-mailadressen uit HTML halen |
 
-De server checkt elk uur of de GetApi spec is gewijzigd. Bij updates:
+De actuele lijst vraag je op met `tools/list`. Dat mag zonder sleutel.
 
-- De tool-lijst wordt automatisch bijgewerkt
-- De client ontvangt een melding (afhankelijk van client-support)
-- Ongeldige specs worden genegeerd met fallback op laatste goede versie
+## Documentatie
 
-**Opmerking**: Niet alle MCP-clients verwerken automatische updates. Herstart je client als je nieuwe tools wilt zien.
+- [MCP-koppeling](https://getapi.nl/mcp-server-integratie): koppelen, voorbeelden en veelgestelde vragen
+- [API-documentatie](https://getapi.nl/docs/api): authenticatie, endpoints en codevoorbeelden
+- [OpenAPI-specificatie](https://api.getapi.nl/docs/api.json): voor OpenWebUI, n8n en eigen tooling
 
-## Bekende beperkingen
+## Registervermeldingen
 
-1. **x402 endpoints**: Betaalbare AI-endpoints worden niet beschikbaar gesteld (niet vereist voor AI-clients)
-2. **Client support**: Herstart je client als de tool-lijst is gewijzigd
-3. **Timeout**: Verzoeken hebben een time-out van 10 seconden
-4. **Response size**: Maximaal 1 MB response
-5. **Spec size**: OpenAPI spec mag maximaal 5 MB zijn
+- Officieel MCP-register: `nl.getapi/mcp`
+- Glama connector: [nl.getapi/mcp](https://glama.ai/mcp/connectors/nl.getapi/mcp)
+- Glama serverpagina: [GetApiNL/mcp-server](https://glama.ai/mcp/servers/GetApiNL/mcp-server)
 
-## Configuratie opties
+## Lokaal draaien vanaf bron
 
-Deze waarden zijn op dit moment vast in de server ingesteld (niet via env aanpasbaar); alleen `API_KEY` is een omgevingsvariabele.
+Deze repository bevat ook een stdio-variant die de OpenAPI-specificatie elk uur opnieuw inleest. Die is bedoeld voor lokaal gebruik en voor eigen tooling.
+
+```bash
+npm install
+npm run build
+API_KEY="ga_live_..." node dist/bin.js
+```
+
+Verschillen met het hosted endpoint:
+
+- Transport is stdio, geen URL en geen header. De sleutel gaat via de omgevingsvariabele `API_KEY`.
+- Toolnamen krijgen een `getapi_`-prefix en punten worden underscores: `kadaster.bag.address` heet lokaal `getapi_kadaster_bag_address`.
+- x402-endpoints worden niet als tool geëxporteerd.
+- De sleutel wordt uit logs en tool-output geredigeerd en gaat alleen mee in de header naar `api.getapi.nl`.
+
+Het npm-pakket `getapi-mcp` is **nog niet gepubliceerd**, dus `npx getapi-mcp` werkt voorlopig niet. Gebruik tot die tijd het hosted endpoint hierboven of de broncode.
+
+### Configuratiewaarden
+
+Deze staan vast in de server; alleen `API_KEY` is een omgevingsvariabele.
 
 | Optie | Default | Omschrijving |
-|-------|--------|-------------|
-| `specUrl` | `https://api.getapi.nl/docs/api.json` | URL naar de GetApi OpenAPI spec |
-| `baseUrl` | `https://api.getapi.nl` | Base URL voor API verzoeken |
-| `authHeader` | `X-Api-Key` | Header naam voor auth |
-| `refreshIntervalMs` | `3600000` (1 uur) | Interval waarmee de spec wordt gecontroleerd |
-| `timeoutMs` | `10000` | Request timeout (ms) |
-| `maxResponseSize` | `1048576` | Max response size (1 MB) |
-| `maxSpecSize` | `5242880` | Max spec size (5 MB) |
-| `x402ExcludedOperations` | leeg | Operation-IDs die niet als tool worden geëxporteerd |
+|---|---|---|
+| `specUrl` | `https://api.getapi.nl/docs/api.json` | OpenAPI-specificatie |
+| `baseUrl` | `https://api.getapi.nl` | Basis-URL voor API-verzoeken |
+| `authHeader` | `X-Api-Key` | Headernaam voor auth |
+| `refreshIntervalMs` | `3600000` | Interval voor de spec-check |
+| `timeoutMs` | `10000` | Request-timeout |
+| `maxResponseSize` | `1048576` | Maximale responsgrootte |
+| `maxSpecSize` | `5242880` | Maximale specgrootte |
+| `x402ExcludedOperations` | leeg | Operation-IDs die geen tool worden |
 
-### Voorbeeld configuratie
+## Foutcodes
 
-De enige omgevingsvariabele is `API_KEY`:
+| Code | Oorzaak | Oplossing |
+|---|---|---|
+| `401` | Sleutel ontbreekt of is ongeldig | Sleutel in de header of in `API_KEY` |
+| `400` | Fout in parameters | Parameters tegen de `inputSchema` leggen |
+| `404` | Onbekend endpoint of verkeerde parameters | URL en parameters controleren |
+| `422` | Validatiefout | Parametertypes controleren |
+| `503` | API tijdelijk niet beschikbaar | Later opnieuw proberen |
+| `TIMEOUT` | Request duurde te lang | Timeout verhogen |
 
-```json
-{
-  "mcpServers": {
-    "getapi": {
-      "command": "npx",
-      "args": ["-y", "getapi-mcp@0.1.0"],
-      "env": {
-        "API_KEY": "ga_live_xxxxxxxxxxxxxxxxxxxx"
-      }
-    }
-  }
-}
-```
-
-## Troubleshooting
-
-### "API_KEY is niet ingesteld of ongeldig"
-
-De server stopt met deze melding als `API_KEY` ontbreekt of niet met `ga_live_`/`ga_test_` begint. Stel de variabele in via je MCP client configuratie (zie Configuratie).
-
-### "Geen spec beschikbaar"
-
-- De spec-URL (`https://api.getapi.nl/docs/api.json`) is niet bereikbaar
-- De GetApi spec is tijdelijk niet beschikbaar
-- Check je internetverbinding
-
-De server start in dat geval met alleen de `getapi_ping` fallback-tool en probeert het bij de volgende refresh opnieuw.
-
-### "Parameter validation failed"
-
-- Controleer de parameter namen en types tegen de `inputSchema` van de tool
-- Verplichte parameters staan in `required`
-
-### Fout met statuscode (bijv. 401/404)
-
-- `401`: ongeldige of ontbrekende API-key
-- `404`: verkeerde parameters of onbekend endpoint
-- `503`/`504`: API tijdelijk niet beschikbaar of timeout
-
-## Ontwikkelen & testen
+## Ontwikkelen en testen
 
 ```bash
-# Afhankelijkheden installeren
 npm install
 
-# Alles valideren: typecheck + lint + build + tests (unit + e2e)
+# Typecheck, lint, build en tests (unit en e2e)
 npm run validate
 
-# Volledige check inclusief smoke-test van het gepackagede npm-artefact
+# Alles, inclusief documentatiecheck en smoke-test van het npm-pakket
 npm run verify
 
-# Alleen de tests
-npm test
-
-# Tests met coverage (en coverage-thresholds)
-npm run test:coverage
-
-# Documentatiecheck: links, ankers, versies en config-waarden
-npm run check:docs
-
-# Live contract test tegen de echte API (vereist API_KEY)
-API_KEY=ga_test_... npm run test:live
-
-# Smoke-test: pakt + installeert + start het echte pakket
-npm run test:package
-
-# Typecheck / lint afzonderlijk
-npm run typecheck
-npm run lint
-
-# Bouwen naar dist/
-npm run build
+npm test                 # alleen de tests
+npm run test:coverage    # met coverage-drempels
+npm run check:docs       # links, ankers, versies en configuratiewaarden
+npm run test:package     # pakt, installeert en start het echte pakket
+API_KEY=ga_test_... npm run test:live   # contracttest tegen de echte API
 ```
 
-CI draait deze checks automatisch: `.github/workflows/ci.yml` op elke push/PR en `.github/workflows/release.yml` vóór publicatie.
+CI draait deze checks op elke push en pull request (`.github/workflows/ci.yml`) en vóór publicatie (`.github/workflows/release.yml`).
 
-### De server lokaal draaien
-
-De server praat via stdio met een MCP-client. Voor een snelle handmatige controle kun je hem direct starten en hem JSON-RPC-berichten op stdin sturen:
+Handmatig controleren van de stdio-server: start hem en stuur JSON-RPC op stdin.
 
 ```bash
-# Start de server (met een geldige ga_live_/ga_test_ key)
 API_KEY="ga_test_1234567890" node dist/bin.js
 ```
 
-Stuur vervolgens bijvoorbeeld deze regel naar stdin:
-
 ```json
-{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"cli","version":"1.0.0"}}}
+{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"cli","version":"1.0.0"}}}
 ```
 
-Alle logregels verschijnen op **stderr**; stdout bevat uitsluitend JSON-RPC. Zo zie je direct of de server correct opstart en welke tools beschikbaar zijn.
-
-### Draaien in een MCP-client
-
-Gebruik de configuratie onder [MCP Server configuratie](#mcp-server-configuratie). De client start de server zelf via stdio (`command: "npx"`) en geeft de API-key via `env` mee; er is geen poort of URL nodig.
-
-## Versies
-
-Zie de [CHANGELOG](CHANGELOG.md) voor een lijst van updates en verbeteringen.
+Alle logregels gaan naar stderr; stdout bevat uitsluitend JSON-RPC.
 
 ## Licentie
 
-MIT License - zie [LICENSE](LICENSE) voor details.
+MIT, zie [LICENSE](LICENSE).
 
 ## Support
 
-Voor vragen, bugs en suggesties, neem contact op via:
-- Email: info@wdnoord.nl
-- GitHub Issues: https://github.com/GetApiNL/mcp-server/issues
-
----
-
-**Let op**: Deze server werkt alleen met een actieve GetApi API-key. Zonder geldige API-key werkt de server niet.
+- E-mail: info@wdnoord.nl
+- Issues: https://github.com/GetApiNL/mcp-server/issues

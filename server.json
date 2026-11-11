@@ -1,52 +1,26 @@
 {
-  "name": "getapi-mcp",
-  "description": "MCP-server for GetApi API - exposes GetApi endpoints as MCP tools",
-  "version": "0.1.0",
-  "command": "npx",
-  "args": ["getapi-mcp"],
-  "mcpServers": {
-    "getapi": {
-      "command": "npx",
-      "args": ["-y", "getapi-mcp@0.1.0"],
-      "env": {
-        "API_KEY": "PLACEHOLDER"
-      }
-    }
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "nl.getapi/mcp",
+  "title": "GetApi",
+  "description": "Nederlandse overheids- en registerdata via MCP: KVK, BAG, energielabel, kenteken, DSO en meer.",
+  "version": "1.0.0",
+  "websiteUrl": "https://getapi.nl/mcp-server-integratie",
+  "repository": {
+    "url": "https://github.com/GetApiNL/mcp-server",
+    "source": "github"
   },
-  "repository": "https://github.com/GetApiNL/mcp-server",
-  "homepage": "https://getapi.nl",
-  "keywords": ["mcp", "getapi", "api", "tool", "openapi", "ai"],
-  "license": "MIT",
-  "platforms": [
+  "remotes": [
     {
-      "name": "node",
-      "version": ">=20.0.0"
+      "type": "streamable-http",
+      "url": "https://api.getapi.nl/mcp",
+      "headers": [
+        {
+          "name": "X-Api-Key",
+          "description": "API key voor authenticatie",
+          "isRequired": true,
+          "isSecret": true
+        }
+      ]
     }
-  ],
-  "auth": {
-    "type": "env-var",
-    "var": "API_KEY",
-    "required": true,
-    "description": "GetApi API key (ga_live_ or ga_test_ prefix)"
-  },
-  "features": {
-    "automaticUpdate": {
-      "enabled": true,
-      "interval": "1h",
-      "description": "Automatically refreshes tools when GetApi spec changes"
-    },
-    "x402Excluded": {
-      "enabled": true,
-      "description": "x402 (payment) endpoints excluded"
-    }
-  },
-  "host": "api.getapi.nl",
-  "spec": {
-    "url": "https://api.getapi.nl/docs/api.json",
-    "validated": true
-  },
-  "timeout": {
-    "request": "10s",
-    "spec": "10s"
-  }
+  ]
 }

@@ -37,7 +37,7 @@
   ],
   "author": "getapinl",
   "license": "MIT",
-  "mcpName": "io.github.getapinl/getapi-mcp",
+  "mcpName": "nl.getapi/mcp",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
     "axios": "^1.6.0",
