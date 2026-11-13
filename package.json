@@ -39,7 +39,7 @@
   "license": "MIT",
   "mcpName": "nl.getapi/mcp",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "axios": "^1.6.0",
     "zod": "^3.22.0"
   },
