@@ -40,7 +40,7 @@
   "mcpName": "nl.getapi/mcp",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "axios": "^1.6.0",
+    "axios": "^1.21.1",
     "zod": "^3.22.0"
   },
   "devDependencies": {
